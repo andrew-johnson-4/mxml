@@ -1,4 +1,10 @@
 # mxml: Mixin Markup Language
+
+[![Crates.IO](https://img.shields.io/crates/v/mxml.svg)](https://crates.rs/crates/mxml)
+[![Documentation](https://img.shields.io/badge/api-rustdoc-blue.svg)](https://docs.rs/mxml)
+[![Build Nightly](https://github.com/andrew-johnson-4/mxml/workflows/BuildNightly/badge.svg)](https://github.com/andrew-johnson-4/mxml)
+[![Build](https://github.com/andrew-johnson-4/mxml/workflows/Build/badge.svg)](https://github.com/andrew-johnson-4/mxml)
+
 like regular expressions, but for XML
 
 ```rust
