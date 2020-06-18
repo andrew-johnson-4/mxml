@@ -1,4 +1,4 @@
-# mxml
+# mxml (Mixin Markup Language)
 like regular expressions, but for XML
 
 ```rust
@@ -12,6 +12,8 @@ fn main() {
    ));
 }
 ```
+
+This library is intended for small XML snippets, not large performance sensitive XML processing.
 
 # Contributions
 Unless you explicitly state otherwise, any contribution intentionally submitted 
