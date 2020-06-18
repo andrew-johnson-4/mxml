@@ -1,4 +1,4 @@
-# mxml (Mixin Markup Language)
+# mxml: Mixin Markup Language
 like regular expressions, but for XML
 
 ```rust
