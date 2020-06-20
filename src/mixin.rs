@@ -203,7 +203,7 @@ impl Parse for FME {
 pub struct Mixin {
    name: Ident,
    _paren_token: token::Paren,
-   _args: Punctuated<Ident, Token![,]>,
+   args: Punctuated<Ident, Token![,]>,
    _comma: Token![,],
    _fme: FME
 }
@@ -213,7 +213,7 @@ impl Parse for Mixin {
       Ok(Mixin {
          name: input.parse()?,
          _paren_token: parenthesized!(content in input),
-         _args: content.parse_terminated(Ident::parse)?,
+         args: content.parse_terminated(Ident::parse)?,
          _comma: input.parse()?,
          _fme: input.parse()?
       })
@@ -222,10 +222,15 @@ impl Parse for Mixin {
 impl ToTokens for Mixin {
    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
       let ref name = self.name;
+      let args: Vec<&Ident> = self.args.iter().collect();
       let span = name.span();
  
       quote_spanned!(span=>
-         fn #name() {}
+         fn #name(#(#args: &str,)*) -> mxml_dep::FindMatchEditElement {
+            mxml_dep::FindMatchEditElement {
+               fme: vec![]
+            }
+         }
       ).to_tokens(tokens);
    }
 }

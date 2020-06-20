@@ -13,7 +13,7 @@ keywords = ["xml","html","templating","library"]
 proc-macro = true
 
 [dependencies]
-mxml_dep = "0.0.1"
+mxml_dep = "0.1.1"
 quote = "1.0"
 proc-macro2 = { version="1.0", features=["span-locations"] }
 
