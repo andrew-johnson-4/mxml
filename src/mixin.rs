@@ -5,7 +5,7 @@
 
 use quote::{quote_spanned, ToTokens};
 use syn::parse::{Parse, ParseStream, Result};
-use syn::{parenthesized,Ident,token,Token,LitStr};
+use syn::{parenthesized,braced,Ident,token,Token,LitStr};
 use syn::punctuated::Punctuated;
 
 pub enum AttrPrefix {
@@ -22,11 +22,42 @@ impl Parse for AttrPrefix {
    }
 }
 
+pub struct Var {
+   _brace1: token::Brace,
+   _brace2: token::Brace,
+   _var: Ident
+}
+impl Parse for Var {
+   fn parse(input: ParseStream) -> Result<Self> {
+      let content1;
+      let content2;
+      Ok(Var {
+         _brace1: braced!(content1 in input),
+         _brace2: braced!(content2 in content1),
+         _var: content2.parse()?
+      })
+   }
+}
+
+pub enum StrOrVar {
+   Str(LitStr),
+   Var(Var)
+}
+impl Parse for StrOrVar {
+   fn parse(input: ParseStream) -> Result<Self> {
+      Ok(if input.peek(token::Brace) {
+         StrOrVar::Var(input.parse()?)
+      } else {
+         StrOrVar::Str(input.parse()?)
+      })
+   }
+}
+
 pub struct Attr {
    _attr_prefix: AttrPrefix,
    _key: IdentOrStr,
    _eq: Token![=],
-   _val: LitStr
+   _val: StrOrVar
 }
 impl Parse for Attr {
    fn parse(input: ParseStream) -> Result<Self> {
@@ -66,6 +97,18 @@ pub enum IdentOrAny {
    Ident(Ident),
    Any(Token![?])
 }
+impl std::fmt::Display for IdentOrAny {
+   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+      match self {
+         IdentOrAny::Ident(id) => {
+            write!(f, "{}", id.to_string())
+         },
+         IdentOrAny::Any(_) => {
+            write!(f, "?")
+         }
+      }
+   }
+}
 impl Parse for IdentOrAny {
    fn parse(input: ParseStream) -> Result<Self> {
       Ok(if input.peek(Token![?]) {
@@ -76,18 +119,65 @@ impl Parse for IdentOrAny {
    }
 }
 
+pub struct FullBody {
+   _inner_bracket: Token![>],
+   _children: Vec<FME>,
+   _post_bracket: Token![<],
+   _post_slash: Token![/],
+   _post_ident: IdentOrAny
+}
+impl FullBody {
+   fn parse(input: ParseStream, _tag: &str) -> Result<Self> {
+      Ok(FullBody {
+         _inner_bracket: input.parse()?,
+         _children: FME::parse_outer(input)?,
+         _post_bracket: input.parse()?,
+         _post_slash: input.parse()?,
+         _post_ident: input.parse()?
+      })
+   }
+}
+
+pub enum Body {
+   SelfClosing(Token![/]),
+   FullBody(FullBody)
+}
+impl Body {
+   fn parse(input: ParseStream, tag: &str) -> Result<Self> {
+      if input.peek(Token![/]) {
+         Ok(Body::SelfClosing(input.parse()?))
+      } else {
+         Ok(Body::FullBody(FullBody::parse(input, tag)?))
+      }
+   }
+}
+
 pub struct FME {
    _open_bracket: Token![<],
    _name: IdentOrAny,
    _attrs: Vec<Attr>,
+   _body: Body,
    _close_bracket: Token![>]
+}
+impl FME {
+   fn parse_outer(input: ParseStream) -> Result<Vec<Self>> {
+      let mut fmes = Vec::new();
+      while !(input.peek(Token![<]) && input.peek2(Token![/])) {
+         fmes.push(input.parse()?);
+      }
+      Ok(fmes)
+   }
 }
 impl Parse for FME {
    fn parse(input: ParseStream) -> Result<Self> {
+      let open_bracket: Token![<] = input.parse()?;
+      let name: IdentOrAny = input.parse()?;
+      let closing_tag = name.to_string();
       Ok(FME {
-         _open_bracket: input.parse()?,
-         _name: input.parse()?,
+         _open_bracket: open_bracket,
+         _name: name,
          _attrs: Attr::parse_outer(input)?,
+         _body: Body::parse(input, &closing_tag)?,
          _close_bracket: input.parse()?
       })
    }
