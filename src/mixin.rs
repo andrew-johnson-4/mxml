@@ -5,7 +5,8 @@
 
 use quote::{quote_spanned, ToTokens};
 use syn::parse::{Parse, ParseStream, Result};
-use syn::{Ident};
+use syn::{parenthesized,Ident,token,Token};
+use syn::punctuated::Punctuated;
 
 /*
 mixin!(Tooltip(message),
@@ -14,14 +15,19 @@ mixin!(Tooltip(message),
 */
 
 pub struct Mixin {
-   name: Ident
+   name: Ident,
+   _paren_token: token::Paren,
+   _args: Punctuated<Ident, Token![,]>,
+   _comma: Token![,],
 }
 impl Parse for Mixin {
    fn parse(input: ParseStream) -> Result<Self> {
-      let name: Ident = input.parse()?;
-
+      let content;
       Ok(Mixin {
-         name: name
+         name: input.parse()?,
+         _paren_token: parenthesized!(content in input),
+         _args: content.parse_terminated(Ident::parse)?,
+         _comma: input.parse()?
       })
    }
 }
