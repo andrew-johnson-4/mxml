@@ -7,11 +7,19 @@ use quote::{quote_spanned, ToTokens};
 use syn::parse::{Parse, ParseStream, Result, Error};
 use syn::{parenthesized,braced,Ident,token,Token,LitStr};
 use syn::punctuated::Punctuated;
-use proc_macro2::Span;
+use proc_macro2::{Span,Literal};
 
 pub enum AttrPrefix {
    Match(Token![~]),
    Add(Token![+]),
+}
+impl AttrPrefix {
+   fn is_match(&self) -> bool {
+      match self {
+         AttrPrefix::Match(_) => { true }
+         _ => { false }
+      }
+   }
 }
 impl Parse for AttrPrefix {
    fn parse(input: ParseStream) -> Result<Self> {
@@ -55,7 +63,7 @@ impl Parse for StrOrVar {
 }
 
 pub struct Attr {
-   _attr_prefix: AttrPrefix,
+   attr_prefix: AttrPrefix,
    _key: IdentOrStr,
    _eq: Token![=],
    _val: StrOrVar
@@ -63,7 +71,7 @@ pub struct Attr {
 impl Parse for Attr {
    fn parse(input: ParseStream) -> Result<Self> {
       Ok(Attr {
-         _attr_prefix: input.parse()?,
+         attr_prefix: input.parse()?,
          _key: input.parse()?,
          _eq: input.parse()?,
          _val: input.parse()?
@@ -127,6 +135,20 @@ impl Parse for IdentOrAny {
       })
    }
 }
+impl ToTokens for IdentOrAny {
+   fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+      let span = self.span();
+      match self {
+         IdentOrAny::Ident(i) => {
+            let tag = Literal::string(&i.to_string());
+            quote_spanned!(span=>
+               mxml_dep::Match::HasTag(#tag),
+            ).to_tokens(tokens);
+         },
+         _ => {}
+      }
+   }
+}
 
 pub struct FullBody {
    _inner_bracket: Token![>],
@@ -170,9 +192,9 @@ impl Body {
 }
 
 pub struct FME {
-   _open_bracket: Token![<],
-   _name: IdentOrAny,
-   _attrs: Vec<Attr>,
+   open_bracket: Token![<],
+   name: IdentOrAny,
+   attrs: Vec<Attr>,
    _body: Body,
    _close_bracket: Token![>]
 }
@@ -191,12 +213,27 @@ impl Parse for FME {
       let name: IdentOrAny = input.parse()?;
       let closing_tag = name.to_string();
       Ok(FME {
-         _open_bracket: open_bracket,
-         _name: name,
-         _attrs: Attr::parse_outer(input)?,
+         open_bracket: open_bracket,
+         name: name,
+         attrs: Attr::parse_outer(input)?,
          _body: Body::parse(input, &closing_tag)?,
          _close_bracket: input.parse()?
       })
+   }
+}
+impl ToTokens for FME {
+   fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+      let span = self.open_bracket.span;
+      let ref name = self.name;
+      let match_attrs: Vec<&Attr> = self.attrs.iter().filter(|a| a.attr_prefix.is_match()).collect();
+      let edit_attrs: Vec<&Attr> = self.attrs.iter().filter(|a| a.attr_prefix.is_match()).collect();
+      quote_spanned!(span=>
+         (
+           FindElement{find:vec![]},
+           MatchElement{when:vec![#name /* #(#match_attrs)* */]},
+           EditElement{edit:vec![/* #(#edit_attrs)* */]}
+         )
+      ).to_tokens(tokens);
    }
 }
 
@@ -205,7 +242,7 @@ pub struct Mixin {
    _paren_token: token::Paren,
    args: Punctuated<Ident, Token![,]>,
    _comma: Token![,],
-   _fme: FME
+   fme: FME
 }
 impl Parse for Mixin {
    fn parse(input: ParseStream) -> Result<Self> {
@@ -215,7 +252,7 @@ impl Parse for Mixin {
          _paren_token: parenthesized!(content in input),
          args: content.parse_terminated(Ident::parse)?,
          _comma: input.parse()?,
-         _fme: input.parse()?
+         fme: input.parse()?
       })
    }
 }
@@ -223,12 +260,15 @@ impl ToTokens for Mixin {
    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
       let ref name = self.name;
       let args: Vec<&Ident> = self.args.iter().collect();
+      let ref fme = self.fme;
       let span = name.span();
  
       quote_spanned!(span=>
          fn #name(#(#args: &str,)*) -> mxml_dep::FindMatchEditElement {
             mxml_dep::FindMatchEditElement {
-               fme: vec![]
+               fme: vec![
+                 #fme
+               ]
             }
          }
       ).to_tokens(tokens);
