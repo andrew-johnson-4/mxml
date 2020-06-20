@@ -4,9 +4,10 @@
 // also see LICENSE2 file or <https://www.apache.org/licenses/LICENSE-2.0>
 
 use quote::{quote_spanned, ToTokens};
-use syn::parse::{Parse, ParseStream, Result};
+use syn::parse::{Parse, ParseStream, Result, Error};
 use syn::{parenthesized,braced,Ident,token,Token,LitStr};
 use syn::punctuated::Punctuated;
+use proc_macro2::Span;
 
 pub enum AttrPrefix {
    Match(Token![~]),
@@ -97,6 +98,14 @@ pub enum IdentOrAny {
    Ident(Ident),
    Any(Token![?])
 }
+impl IdentOrAny {
+   fn span(&self) -> Span {
+      match self {
+         IdentOrAny::Ident(i) => { i.span() },
+         IdentOrAny::Any(i) => { i.span },
+      }
+   }
+}
 impl std::fmt::Display for IdentOrAny {
    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
       match self {
@@ -127,13 +136,21 @@ pub struct FullBody {
    _post_ident: IdentOrAny
 }
 impl FullBody {
-   fn parse(input: ParseStream, _tag: &str) -> Result<Self> {
+   fn parse(input: ParseStream, tag: &str) -> Result<Self> {
       Ok(FullBody {
          _inner_bracket: input.parse()?,
          _children: FME::parse_outer(input)?,
          _post_bracket: input.parse()?,
          _post_slash: input.parse()?,
-         _post_ident: input.parse()?
+         _post_ident: {
+            let name: IdentOrAny = input.parse()?;
+            if name.to_string() != tag {
+              let msg = format!("Expected </{}> found </{}>", tag, name);
+              let r = Error::new(name.span(), msg);
+              return Err(r)
+            }
+            name
+         }
       })
    }
 }
