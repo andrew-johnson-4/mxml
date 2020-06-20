@@ -3,7 +3,7 @@
 // see the LICENSE file or <http://opensource.org/licenses/MIT>
 // also see LICENSE2 file or <https://www.apache.org/licenses/LICENSE-2.0>
 
-use quote::{quote_spanned, ToTokens};
+use quote::{quote, quote_spanned, ToTokens};
 use syn::parse::{Parse, ParseStream, Result, Error};
 use syn::{parenthesized,braced,Ident,token,Token,LitStr};
 use syn::punctuated::Punctuated;
@@ -14,6 +14,12 @@ pub enum AttrPrefix {
    Add(Token![+]),
 }
 impl AttrPrefix {
+   fn span(&self) -> Span {
+      match self {
+         AttrPrefix::Match(t) => { t.span }
+         AttrPrefix::Add(t) => { t.span }
+      }
+   }
    fn is_match(&self) -> bool {
       match self {
          AttrPrefix::Match(_) => { true }
@@ -34,7 +40,7 @@ impl Parse for AttrPrefix {
 pub struct Var {
    _brace1: token::Brace,
    _brace2: token::Brace,
-   _var: Ident
+   var: Ident
 }
 impl Parse for Var {
    fn parse(input: ParseStream) -> Result<Self> {
@@ -43,8 +49,13 @@ impl Parse for Var {
       Ok(Var {
          _brace1: braced!(content1 in input),
          _brace2: braced!(content2 in content1),
-         _var: content2.parse()?
+         var: content2.parse()?
       })
+   }
+}
+impl ToTokens for Var {
+   fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+      self.var.to_tokens(tokens);
    }
 }
 
@@ -61,20 +72,55 @@ impl Parse for StrOrVar {
       })
    }
 }
+impl ToTokens for StrOrVar {
+   fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+      match self {
+         StrOrVar::Str(s) => {
+            quote!(
+               #s.to_string()
+            ).to_tokens(tokens);
+         },
+         StrOrVar::Var(v) => {
+            quote!(
+               #v.to_string()
+            ).to_tokens(tokens);
+         }
+      }
+   }
+}
 
 pub struct Attr {
    attr_prefix: AttrPrefix,
-   _key: IdentOrStr,
+   key: IdentOrStr,
    _eq: Token![=],
-   _val: StrOrVar
+   val: StrOrVar
+}
+impl ToTokens for Attr {
+   fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+      let span = self.attr_prefix.span();
+      let key = Literal::string(&self.key.to_string());
+      let ref val = self.val;
+      match self.attr_prefix {
+         AttrPrefix::Match(_) => {
+            quote_spanned!(span=>
+               mxml_dep::Match::HasAttributeValue(#key.to_string(),#val),
+            ).to_tokens(tokens);
+         },
+         _ => {
+            quote_spanned!(span=>
+               mxml_dep::Edit::AddAttribute(#key.to_string(),#val),
+            ).to_tokens(tokens);
+         }
+      }
+   }
 }
 impl Parse for Attr {
    fn parse(input: ParseStream) -> Result<Self> {
       Ok(Attr {
          attr_prefix: input.parse()?,
-         _key: input.parse()?,
+         key: input.parse()?,
          _eq: input.parse()?,
-         _val: input.parse()?
+         val: input.parse()?
       })
    }
 }
@@ -92,6 +138,18 @@ pub enum IdentOrStr {
    Ident(Ident),
    Str(LitStr)
 }
+impl std::fmt::Display for IdentOrStr {
+   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+      match self {
+         IdentOrStr::Ident(id) => {
+            write!(f, "{}", id.to_string())
+         },
+         IdentOrStr::Str(s) => {
+            write!(f, "{}", s.value())
+         }
+      }
+   }
+}
 impl Parse for IdentOrStr {
    fn parse(input: ParseStream) -> Result<Self> {
       Ok(if input.peek(LitStr) {
@@ -106,14 +164,6 @@ pub enum IdentOrAny {
    Ident(Ident),
    Any(Token![?])
 }
-impl IdentOrAny {
-   fn span(&self) -> Span {
-      match self {
-         IdentOrAny::Ident(i) => { i.span() },
-         IdentOrAny::Any(i) => { i.span },
-      }
-   }
-}
 impl std::fmt::Display for IdentOrAny {
    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
       match self {
@@ -123,6 +173,14 @@ impl std::fmt::Display for IdentOrAny {
          IdentOrAny::Any(_) => {
             write!(f, "?")
          }
+      }
+   }
+}
+impl IdentOrAny {
+   fn span(&self) -> Span {
+      match self {
+         IdentOrAny::Ident(i) => { i.span() },
+         IdentOrAny::Any(i) => { i.span },
       }
    }
 }
@@ -142,7 +200,7 @@ impl ToTokens for IdentOrAny {
          IdentOrAny::Ident(i) => {
             let tag = Literal::string(&i.to_string());
             quote_spanned!(span=>
-               mxml_dep::Match::HasTag(#tag),
+               mxml_dep::Match::HasTag(#tag.to_string()),
             ).to_tokens(tokens);
          },
          _ => {}
@@ -226,12 +284,12 @@ impl ToTokens for FME {
       let span = self.open_bracket.span;
       let ref name = self.name;
       let match_attrs: Vec<&Attr> = self.attrs.iter().filter(|a| a.attr_prefix.is_match()).collect();
-      let edit_attrs: Vec<&Attr> = self.attrs.iter().filter(|a| a.attr_prefix.is_match()).collect();
+      let edit_attrs: Vec<&Attr> = self.attrs.iter().filter(|a| !a.attr_prefix.is_match()).collect();
       quote_spanned!(span=>
          (
-           FindElement{find:vec![]},
-           MatchElement{when:vec![#name /* #(#match_attrs)* */]},
-           EditElement{edit:vec![/* #(#edit_attrs)* */]}
+           mxml_dep::FindElement{find:vec![]},
+           mxml_dep::MatchElement{when:vec![#name #(#match_attrs)*]},
+           mxml_dep::EditElement{edit:vec![#(#edit_attrs)*]}
          )
       ).to_tokens(tokens);
    }
