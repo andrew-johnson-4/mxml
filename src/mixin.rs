@@ -103,7 +103,7 @@ impl ToTokens for Attr {
       match self.attr_prefix {
          AttrPrefix::Match(_) => {
             quote_spanned!(span=>
-               mxml_dep::Match::HasAttributeValue(#key.to_string(),#val),
+               mxml_dep::Match::HasAttribute(#key.to_string(),#val),
             ).to_tokens(tokens);
          },
          _ => {
