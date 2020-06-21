@@ -210,7 +210,7 @@ impl ToTokens for IdentOrAny {
 
 pub struct FullBody {
    _inner_bracket: Token![>],
-   _children: Vec<FME>,
+   children: Vec<FME>,
    _post_bracket: Token![<],
    _post_slash: Token![/],
    _post_ident: IdentOrAny
@@ -219,7 +219,7 @@ impl FullBody {
    fn parse(input: ParseStream, tag: &str) -> Result<Self> {
       Ok(FullBody {
          _inner_bracket: input.parse()?,
-         _children: FME::parse_outer(input)?,
+         children: FME::parse_outer(input)?,
          _post_bracket: input.parse()?,
          _post_slash: input.parse()?,
          _post_ident: {
@@ -248,12 +248,22 @@ impl Body {
       }
    }
 }
+impl ToTokens for Body {
+   fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+      if let Body::FullBody(b) = self {
+         let ref cs = b.children;
+         quote!(
+           #(#cs)*
+         ).to_tokens(tokens);
+      }
+   }
+}
 
 pub struct FME {
    open_bracket: Token![<],
    name: IdentOrAny,
    attrs: Vec<Attr>,
-   _body: Body,
+   body: Body,
    _close_bracket: Token![>]
 }
 impl FME {
@@ -274,7 +284,7 @@ impl Parse for FME {
          open_bracket: open_bracket,
          name: name,
          attrs: Attr::parse_outer(input)?,
-         _body: Body::parse(input, &closing_tag)?,
+         body: Body::parse(input, &closing_tag)?,
          _close_bracket: input.parse()?
       })
    }
@@ -285,12 +295,14 @@ impl ToTokens for FME {
       let ref name = self.name;
       let match_attrs: Vec<&Attr> = self.attrs.iter().filter(|a| a.attr_prefix.is_match()).collect();
       let edit_attrs: Vec<&Attr> = self.attrs.iter().filter(|a| !a.attr_prefix.is_match()).collect();
+      let ref body = self.body;
       quote_spanned!(span=>
          (
            mxml_dep::FindElement{find:vec![]},
            mxml_dep::MatchElement{when:vec![#name #(#match_attrs)*]},
            mxml_dep::EditElement{edit:vec![#(#edit_attrs)*]}
-         )
+         ),
+         #body
       ).to_tokens(tokens);
    }
 }
